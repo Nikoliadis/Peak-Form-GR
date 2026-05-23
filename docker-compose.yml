@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: peakform-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: peakform
+      POSTGRES_PASSWORD: peakform123
+      POSTGRES_DB: peakform
+    ports:
+      - '5432:5432'
+    volumes:
+      - peakform_db:/var/lib/postgresql/data
+
+volumes:
+  peakform_db:
