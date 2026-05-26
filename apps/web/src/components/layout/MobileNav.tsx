@@ -26,7 +26,7 @@ export default function MobileNav() {
   const links = user?.role === 'TRAINER' ? trainerLinks : athleteLinks;
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 px-2 pb-safe z-50">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 dark:bg-gray-900 dark:border-gray-800 px-2 pb-safe z-50">
       <div className="flex items-center justify-around">
         {links.map(({ href, label, icon: Icon }) => {
           const active = pathname === href;
@@ -36,7 +36,7 @@ export default function MobileNav() {
               href={href}
               className={cn(
                 'flex flex-col items-center gap-1 px-3 py-3 rounded-xl transition-all duration-200',
-                active ? 'text-brand-400' : 'text-gray-500'
+                active ? 'text-brand-500' : 'text-gray-400 dark:text-gray-500'
               )}
             >
               <Icon size={22} />
