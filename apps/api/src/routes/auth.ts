@@ -13,12 +13,13 @@ const registerSchema = z.object({
   password: z.string().min(8),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
-  role: z.enum(['TRAINER', 'ATHLETE']),
+  roles: z.array(z.enum(['TRAINER', 'ATHLETE'])).min(1).max(2),
 });
 
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string(),
+  activeRole: z.enum(['TRAINER', 'ATHLETE']).optional(),
 });
 
 function generateTokens(userId: string, email: string, role: string) {
@@ -42,7 +43,9 @@ router.post('/register', async (req: Request, res: Response) => {
     return;
   }
 
-  const { email, password, firstName, lastName, role } = result.data;
+  const { email, password, firstName, lastName, roles } = result.data;
+  const dualRole = roles.length === 2;
+  const primaryRole = roles.includes('TRAINER') ? 'TRAINER' : 'ATHLETE';
 
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) {
@@ -52,8 +55,8 @@ router.post('/register', async (req: Request, res: Response) => {
 
   const hashed = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
-    data: { email, password: hashed, firstName, lastName, role },
-    select: { id: true, email: true, firstName: true, lastName: true, role: true },
+    data: { email, password: hashed, firstName, lastName, role: primaryRole, dualRole },
+    select: { id: true, email: true, firstName: true, lastName: true, role: true, dualRole: true },
   });
 
   const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.role);
@@ -76,7 +79,7 @@ router.post('/login', async (req: Request, res: Response) => {
     return;
   }
 
-  const { email, password } = result.data;
+  const { email, password, activeRole } = result.data;
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user || !user.isActive) {
@@ -90,7 +93,14 @@ router.post('/login', async (req: Request, res: Response) => {
     return;
   }
 
-  const { accessToken, refreshToken } = generateTokens(user.id, user.email, user.role);
+  // Dual-role user without an active role choice → ask frontend to pick
+  if (user.dualRole && !activeRole) {
+    res.json({ needsRoleSelection: true, availableRoles: ['TRAINER', 'ATHLETE'] });
+    return;
+  }
+
+  const chosenRole = activeRole ?? user.role;
+  const { accessToken, refreshToken } = generateTokens(user.id, user.email, chosenRole);
 
   await prisma.refreshToken.create({
     data: {
@@ -101,7 +111,7 @@ router.post('/login', async (req: Request, res: Response) => {
   });
 
   const { password: _, ...safeUser } = user;
-  res.json({ user: safeUser, accessToken, refreshToken });
+  res.json({ user: { ...safeUser, role: chosenRole }, accessToken, refreshToken });
 });
 
 router.post('/refresh', async (req: Request, res: Response) => {
@@ -155,10 +165,97 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response) => {
     where: { id: req.user!.id },
     select: {
       id: true, email: true, firstName: true, lastName: true,
-      role: true, avatar: true, bio: true, phone: true, createdAt: true,
+      role: true, dualRole: true, avatar: true, bio: true, phone: true, createdAt: true,
     },
   });
-  res.json(user);
+  // Return the role from the JWT (active role), not DB role
+  res.json({ ...user, role: req.user!.role });
+});
+
+router.post('/enable-dual-role', authenticate, async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user) {
+    res.status(404).json({ message: 'User not found' });
+    return;
+  }
+  if (user.dualRole) {
+    res.status(400).json({ message: 'Already a dual-role user' });
+    return;
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { dualRole: true },
+  });
+
+  const { password: _, ...safeUser } = user;
+  res.json({ user: { ...safeUser, dualRole: true, role: req.user!.role } });
+});
+
+router.post('/remove-role', authenticate, async (req: AuthRequest, res: Response) => {
+  const { removeRole } = req.body as { removeRole: 'TRAINER' | 'ATHLETE' };
+  if (!['TRAINER', 'ATHLETE'].includes(removeRole)) {
+    res.status(400).json({ message: 'Invalid role' });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user?.dualRole) {
+    res.status(400).json({ message: 'Not a dual-role user' });
+    return;
+  }
+
+  const keepRole = removeRole === 'TRAINER' ? 'ATHLETE' : 'TRAINER';
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { dualRole: false, role: keepRole },
+  });
+
+  // Delete all existing refresh tokens and issue fresh ones with keepRole
+  await prisma.refreshToken.deleteMany({ where: { userId: user.id } });
+  const { accessToken, refreshToken } = generateTokens(user.id, user.email, keepRole);
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshToken,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const { password: _, ...safeUser } = user;
+  res.json({ user: { ...safeUser, role: keepRole, dualRole: false }, accessToken, refreshToken });
+});
+
+router.post('/switch-role', authenticate, async (req: AuthRequest, res: Response) => {
+  const { role } = req.body as { role: 'TRAINER' | 'ATHLETE' };
+  if (!['TRAINER', 'ATHLETE'].includes(role)) {
+    res.status(400).json({ message: 'Invalid role' });
+    return;
+  }
+
+  const user = await prisma.user.findUnique({ where: { id: req.user!.id } });
+  if (!user?.dualRole) {
+    res.status(403).json({ message: 'Not a dual-role user' });
+    return;
+  }
+
+  const { refreshToken: oldToken } = req.body;
+  if (oldToken) {
+    await prisma.refreshToken.deleteMany({ where: { token: oldToken } });
+  }
+
+  const { accessToken, refreshToken } = generateTokens(user.id, user.email, role);
+  await prisma.refreshToken.create({
+    data: {
+      token: refreshToken,
+      userId: user.id,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  const { password: _, ...safeUser } = user;
+  res.json({ user: { ...safeUser, role }, accessToken, refreshToken });
 });
 
 export default router;

@@ -14,7 +14,6 @@ const schema = z.object({
   lastName: z.string().min(1, 'Υποχρεωτικό'),
   email: z.string().email('Μη έγκυρο email'),
   password: z.string().min(8, 'Τουλάχιστον 8 χαρακτήρες'),
-  role: z.enum(['TRAINER', 'ATHLETE']),
 });
 
 type FormData = z.infer<typeof schema>;
@@ -22,27 +21,36 @@ type FormData = z.infer<typeof schema>;
 export default function RegisterPage() {
   const router = useRouter();
   const { register: registerUser, isLoading } = useAuthStore();
-  const [selectedRole, setSelectedRole] = useState<'TRAINER' | 'ATHLETE'>('ATHLETE');
+  const [selectedRoles, setSelectedRoles] = useState<Set<'TRAINER' | 'ATHLETE'>>(new Set(['ATHLETE']));
   const [showPassword, setShowPassword] = useState(false);
+  const [rootError, setRootError] = useState('');
 
-  const { register, handleSubmit, setValue, formState: { errors }, setError } = useForm<FormData>({
+  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
-    defaultValues: { role: 'ATHLETE' },
   });
 
-  const handleRoleSelect = (role: 'TRAINER' | 'ATHLETE') => {
-    setSelectedRole(role);
-    setValue('role', role);
+  const toggleRole = (role: 'TRAINER' | 'ATHLETE') => {
+    setSelectedRoles(prev => {
+      const next = new Set(prev);
+      if (next.has(role) && next.size === 1) return next; // keep at least one
+      next.has(role) ? next.delete(role) : next.add(role);
+      return next;
+    });
   };
 
   const onSubmit = async (data: FormData) => {
+    setRootError('');
+    const roles = Array.from(selectedRoles) as ('TRAINER' | 'ATHLETE')[];
     try {
-      await registerUser(data);
-      router.replace(data.role === 'TRAINER' ? '/trainer' : '/athlete');
+      await registerUser({ ...data, roles });
+      const primaryRole = roles.includes('TRAINER') ? 'TRAINER' : 'ATHLETE';
+      router.replace(primaryRole === 'TRAINER' ? '/trainer' : '/athlete');
     } catch {
-      setError('root', { message: 'Κάτι πήγε στραβά. Δοκίμασε ξανά.' });
+      setRootError('Κάτι πήγε στραβά. Δοκίμασε ξανά.');
     }
   };
+
+  const isDual = selectedRoles.size === 2;
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-gray-50 dark:bg-gray-950">
@@ -56,26 +64,35 @@ export default function RegisterPage() {
         </div>
 
         <form onSubmit={handleSubmit(onSubmit)} className="card space-y-5">
-          {/* Role selector */}
+          {/* Role selector — multi-select */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">Είμαι</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Είμαι</label>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">Μπορείς να επιλέξεις και τους δύο ρόλους</p>
             <div className="grid grid-cols-2 gap-3">
-              {(['TRAINER', 'ATHLETE'] as const).map((role) => (
-                <button
-                  key={role}
-                  type="button"
-                  onClick={() => handleRoleSelect(role)}
-                  className={cn(
-                    'py-3 px-4 rounded-xl border-2 font-semibold transition-all duration-200 text-sm',
-                    selectedRole === role
-                      ? 'border-brand-500 bg-brand-500/10 text-brand-400'
-                      : 'border-gray-700 text-gray-400 hover:border-gray-600'
-                  )}
-                >
-                  {role === 'TRAINER' ? '🏋️ Trainer' : '💪 Athlete'}
-                </button>
-              ))}
+              {(['TRAINER', 'ATHLETE'] as const).map((role) => {
+                const active = selectedRoles.has(role);
+                return (
+                  <button
+                    key={role}
+                    type="button"
+                    onClick={() => toggleRole(role)}
+                    className={cn(
+                      'py-3 px-4 rounded-xl border-2 font-semibold transition-all duration-200 text-sm',
+                      active
+                        ? 'border-brand-500 bg-brand-500/10 text-brand-400'
+                        : 'border-gray-200 dark:border-gray-700 text-gray-400 hover:border-gray-400 dark:hover:border-gray-600'
+                    )}
+                  >
+                    {role === 'TRAINER' ? '🏋️ Trainer' : '💪 Athlete'}
+                  </button>
+                );
+              })}
             </div>
+            {isDual && (
+              <p className="text-xs text-brand-400 mt-2 text-center">
+                Θα μπορείς να εναλλάσσεις ρόλους από το sidebar
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -98,7 +115,7 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1.5">Κωδικός</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">Κωδικός</label>
             <div className="relative">
               <input
                 {...register('password')}
@@ -126,9 +143,9 @@ export default function RegisterPage() {
             {errors.password && <p className="text-red-400 text-sm mt-1">{errors.password.message}</p>}
           </div>
 
-          {errors.root && (
+          {rootError && (
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-3">
-              <p className="text-red-400 text-sm">{errors.root.message}</p>
+              <p className="text-red-400 text-sm">{rootError}</p>
             </div>
           )}
 

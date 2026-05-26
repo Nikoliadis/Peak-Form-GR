@@ -7,6 +7,7 @@ import authRouter from './routes/auth';
 import usersRouter from './routes/users';
 import exercisesRouter from './routes/exercises';
 import programsRouter from './routes/programs';
+import athleteRouter from './routes/athlete';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -21,6 +22,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/exercises', exercisesRouter);
 app.use('/api/programs', programsRouter);
+app.use('/api/athlete', athleteRouter);
 
 app.listen(PORT, () => {
   console.log(`PeakForm API running on http://localhost:${PORT}`);

@@ -6,6 +6,7 @@ export interface User {
   firstName: string;
   lastName: string;
   role: Role;
+  dualRole?: boolean;
   avatar?: string;
   bio?: string;
   phone?: string;
@@ -21,6 +22,16 @@ export interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken: string;
+}
+
+export interface AthleteProfile extends User {
+  activeAssignment?: {
+    id: string;
+    startDate: string;
+    program: { id: string; name: string; goal?: string | null; durationWeeks: number };
+  } | null;
+  workoutCount: number;
+  linkedSince: string;
 }
 
 export interface Exercise {
@@ -60,6 +71,27 @@ export interface ProgramWeek {
   weekNumber: number;
   programId: string;
   days: WorkoutDay[];
+}
+
+export interface SetLog {
+  id: string;
+  logId: string;
+  exerciseId: string;
+  setNumber: number;
+  reps: number;
+  weight?: number | null;
+  notes?: string | null;
+}
+
+export interface WorkoutLog {
+  id: string;
+  athleteId: string;
+  assignmentId: string;
+  dayId: string;
+  date: string;
+  completed: boolean;
+  notes?: string | null;
+  setLogs: SetLog[];
 }
 
 export interface WorkoutProgram {

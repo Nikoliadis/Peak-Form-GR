@@ -8,10 +8,11 @@ interface AuthState {
   accessToken: string | null;
   refreshToken: string | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string, activeRole?: 'TRAINER' | 'ATHLETE') => Promise<{ needsRoleSelection: boolean }>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   fetchMe: () => Promise<void>;
+  switchRole: (role: 'TRAINER' | 'ATHLETE') => Promise<void>;
 }
 
 interface RegisterData {
@@ -19,7 +20,7 @@ interface RegisterData {
   password: string;
   firstName: string;
   lastName: string;
-  role: 'TRAINER' | 'ATHLETE';
+  roles: ('TRAINER' | 'ATHLETE')[];
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -30,13 +31,20 @@ export const useAuthStore = create<AuthState>()(
       refreshToken: null,
       isLoading: false,
 
-      login: async (email, password) => {
+      login: async (email, password, activeRole) => {
         set({ isLoading: true });
         try {
-          const { data } = await api.post<AuthResponse>('/auth/login', { email, password });
+          const { data } = await api.post<AuthResponse & { needsRoleSelection?: boolean; availableRoles?: string[] }>(
+            '/auth/login',
+            { email, password, ...(activeRole ? { activeRole } : {}) }
+          );
+          if (data.needsRoleSelection) {
+            return { needsRoleSelection: true };
+          }
           localStorage.setItem('accessToken', data.accessToken);
           localStorage.setItem('refreshToken', data.refreshToken);
           set({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken });
+          return { needsRoleSelection: false };
         } finally {
           set({ isLoading: false });
         }
@@ -71,6 +79,14 @@ export const useAuthStore = create<AuthState>()(
         } catch {
           set({ user: null, accessToken: null, refreshToken: null });
         }
+      },
+
+      switchRole: async (role) => {
+        const { refreshToken } = get();
+        const { data } = await api.post<AuthResponse>('/auth/switch-role', { role, refreshToken });
+        localStorage.setItem('accessToken', data.accessToken);
+        localStorage.setItem('refreshToken', data.refreshToken);
+        set({ user: data.user, accessToken: data.accessToken, refreshToken: data.refreshToken });
       },
     }),
     {

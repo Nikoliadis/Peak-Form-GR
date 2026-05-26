@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState } from 'react';
 import { useAuthStore } from '@/store/auth';
+import { cn } from '@/lib/utils';
 
 const schema = z.object({
   email: z.string().email('Μη έγκυρο email'),
@@ -19,6 +20,8 @@ export default function LoginPage() {
   const router = useRouter();
   const { login, isLoading } = useAuthStore();
   const [showPassword, setShowPassword] = useState(false);
+  const [step, setStep] = useState<'credentials' | 'roleSelect'>('credentials');
+  const [pendingCredentials, setPendingCredentials] = useState<FormData | null>(null);
 
   const { register, handleSubmit, formState: { errors }, setError } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -26,7 +29,12 @@ export default function LoginPage() {
 
   const onSubmit = async (data: FormData) => {
     try {
-      await login(data.email, data.password);
+      const result = await login(data.email, data.password);
+      if (result.needsRoleSelection) {
+        setPendingCredentials(data);
+        setStep('roleSelect');
+        return;
+      }
       const user = useAuthStore.getState().user;
       router.replace(user?.role === 'TRAINER' ? '/trainer' : '/athlete');
     } catch {
@@ -34,10 +42,75 @@ export default function LoginPage() {
     }
   };
 
+  const selectRole = async (role: 'TRAINER' | 'ATHLETE') => {
+    if (!pendingCredentials) return;
+    try {
+      await login(pendingCredentials.email, pendingCredentials.password, role);
+      router.replace(role === 'TRAINER' ? '/trainer' : '/athlete');
+    } catch {
+      setStep('credentials');
+      setPendingCredentials(null);
+    }
+  };
+
+  if (step === 'roleSelect') {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 bg-gray-50 dark:bg-gray-950">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-600 rounded-2xl mb-4">
+              <span className="text-white text-2xl font-black">PF</span>
+            </div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Επέλεξε ρόλο</h1>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Με ποιον ρόλο θέλεις να συνδεθείς;</p>
+          </div>
+
+          <div className="card space-y-4">
+            <button
+              onClick={() => selectRole('TRAINER')}
+              disabled={isLoading}
+              className={cn(
+                'w-full py-5 px-6 rounded-xl border-2 font-semibold transition-all duration-200 text-left flex items-center gap-4',
+                'border-gray-200 dark:border-gray-700 hover:border-brand-500 hover:bg-brand-500/5 text-gray-900 dark:text-white'
+              )}
+            >
+              <span className="text-3xl">🏋️</span>
+              <div>
+                <p className="font-semibold">Trainer</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-normal">Διαχείριση athletes & προγραμμάτων</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => selectRole('ATHLETE')}
+              disabled={isLoading}
+              className={cn(
+                'w-full py-5 px-6 rounded-xl border-2 font-semibold transition-all duration-200 text-left flex items-center gap-4',
+                'border-gray-200 dark:border-gray-700 hover:border-brand-500 hover:bg-brand-500/5 text-gray-900 dark:text-white'
+              )}
+            >
+              <span className="text-3xl">💪</span>
+              <div>
+                <p className="font-semibold">Athlete</p>
+                <p className="text-sm text-gray-500 dark:text-gray-400 font-normal">Παρακολούθηση workouts & προόδου</p>
+              </div>
+            </button>
+
+            <button
+              onClick={() => { setStep('credentials'); setPendingCredentials(null); }}
+              className="w-full text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors pt-1"
+            >
+              Πίσω
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-gray-50 dark:bg-gray-950">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-10">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-brand-600 rounded-2xl mb-4">
             <span className="text-white text-2xl font-black">PF</span>
