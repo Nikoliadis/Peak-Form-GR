@@ -106,6 +106,7 @@ model WorkoutDay {
   id         String      @id @default(cuid())
   dayNumber  Int         // 1-7
   name       String?     // e.g. "Push Day", "Leg Day"
+  isRestDay  Boolean     @default(false)
   weekId     String
   week       ProgramWeek @relation(fields: [weekId], references: [id], onDelete: Cascade)
 
