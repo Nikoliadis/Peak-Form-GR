@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
-import { Dumbbell, Flame, CheckCircle, TrendingUp, ArrowRight } from 'lucide-react';
+import { Dumbbell, Flame, CheckCircle, TrendingUp, ArrowRight, UserCheck, X } from 'lucide-react';
 import { api } from '@/lib/api';
 
 interface TodaySummary {
@@ -13,12 +13,23 @@ interface TodaySummary {
   finished?: boolean;
 }
 
+interface TrainerInvite {
+  inviteId: string;
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  bio?: string;
+}
+
 export default function AthleteDashboard() {
   const { user } = useAuthStore();
   const router = useRouter();
   const [today, setToday] = useState<TodaySummary | null>(null);
   const [stats, setStats] = useState({ totalCompleted: 0, streak: 0 });
+  const [invites, setInvites] = useState<TrainerInvite[]>([]);
   const [loading, setLoading] = useState(true);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
   const todayDate = new Date().toLocaleDateString('el-GR', {
     weekday: 'long', day: 'numeric', month: 'long',
@@ -28,11 +39,23 @@ export default function AthleteDashboard() {
     Promise.all([
       api.get('/athlete/today').catch(() => ({ data: null })),
       api.get('/athlete/stats').catch(() => ({ data: { totalCompleted: 0, streak: 0 } })),
-    ]).then(([todayRes, statsRes]) => {
+      api.get('/athlete/invites').catch(() => ({ data: [] })),
+    ]).then(([todayRes, statsRes, invitesRes]) => {
       setToday(todayRes.data);
       setStats(statsRes.data);
+      setInvites(invitesRes.data);
     }).finally(() => setLoading(false));
   }, []);
+
+  const handleInvite = async (inviteId: string, action: 'accept' | 'decline') => {
+    setRespondingId(inviteId);
+    try {
+      await api.post(`/athlete/invites/${inviteId}/${action}`, {});
+      setInvites(prev => prev.filter(i => i.inviteId !== inviteId));
+    } finally {
+      setRespondingId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -43,6 +66,47 @@ export default function AthleteDashboard() {
           Γεια σου, {user?.firstName}! 💪
         </h1>
       </div>
+
+      {/* Pending Invites */}
+      {invites.length > 0 && (
+        <div className="space-y-2">
+          {invites.map(inv => (
+            <div key={inv.inviteId} className="card border-brand-500/30 bg-brand-500/5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center text-white font-bold text-sm shrink-0">
+                  {inv.firstName[0]}{inv.lastName[0]}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <UserCheck size={14} className="text-brand-400 shrink-0" />
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                      Πρόσκληση από {inv.firstName} {inv.lastName}
+                    </p>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{inv.email}</p>
+                  {inv.bio && <p className="text-xs text-gray-400 mt-0.5 truncate">{inv.bio}</p>}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleInvite(inv.inviteId, 'accept')}
+                  disabled={respondingId === inv.inviteId}
+                  className="btn-primary text-sm py-2 px-4 flex-1"
+                >
+                  {respondingId === inv.inviteId ? '...' : 'Αποδοχή'}
+                </button>
+                <button
+                  onClick={() => handleInvite(inv.inviteId, 'decline')}
+                  disabled={respondingId === inv.inviteId}
+                  className="btn-secondary text-sm py-2 px-4"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Streak */}
       <div className="card bg-gradient-to-br from-orange-500/20 to-orange-600/5 border-orange-500/20">

@@ -2,13 +2,23 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Users, Plus, Search, Dumbbell, X, ChevronRight, Trash2, CheckCircle } from 'lucide-react';
+import { Users, Plus, Search, Dumbbell, X, ChevronRight, Trash2, CheckCircle, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { AthleteProfile } from '@/types';
+
+interface PendingInvite {
+  inviteId: string;
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  sentAt: string;
+}
 
 export default function AthletesPage() {
   const router = useRouter();
   const [athletes, setAthletes] = useState<AthleteProfile[]>([]);
+  const [pending, setPending] = useState<PendingInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showInvite, setShowInvite] = useState(false);
@@ -18,8 +28,12 @@ export default function AthletesPage() {
 
   const load = async () => {
     try {
-      const { data } = await api.get('/users/trainer/athletes');
-      setAthletes(data);
+      const [athletesRes, pendingRes] = await Promise.all([
+        api.get('/users/trainer/athletes'),
+        api.get('/users/trainer/pending-invites'),
+      ]);
+      setAthletes(athletesRes.data);
+      setPending(pendingRes.data);
     } finally {
       setLoading(false);
     }
@@ -33,7 +47,7 @@ export default function AthletesPage() {
     setInviteMsg(null);
     try {
       const { data } = await api.post('/users/trainer/invite', { athleteEmail: inviteEmail });
-      setInviteMsg({ type: 'success', text: `Ο ${data.firstName} ${data.lastName} προστέθηκε!` });
+      setInviteMsg({ type: 'success', text: `Η πρόσκληση στάλθηκε στον/στην ${data.firstName} ${data.lastName}!` });
       setInviteEmail('');
       load();
     } catch (err: any) {
@@ -88,6 +102,32 @@ export default function AthletesPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Συνολικά Workouts</p>
         </div>
       </div>
+
+      {/* Pending Invites */}
+      {pending.length > 0 && (
+        <div className="space-y-2">
+          <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 flex items-center gap-2">
+            <Clock size={14} />
+            Εκκρεμείς Προσκλήσεις ({pending.length})
+          </h2>
+          {pending.map(inv => (
+            <div key={inv.inviteId} className="card flex items-center gap-4 border-dashed border-amber-300/40 dark:border-amber-500/20 bg-amber-50/50 dark:bg-amber-500/5">
+              <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-600 dark:text-amber-400 font-bold text-sm shrink-0">
+                {inv.firstName[0]}{inv.lastName[0]}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-900 dark:text-white text-sm">
+                  {inv.firstName} {inv.lastName}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{inv.email}</p>
+              </div>
+              <span className="text-xs bg-amber-500/10 text-amber-600 dark:text-amber-400 px-2 py-1 rounded-full shrink-0">
+                Αναμονή
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Search */}
       {athletes.length > 0 && (

@@ -72,19 +72,43 @@ router.post('/trainer/invite', authenticate, requireRole('TRAINER'), async (req:
     return;
   }
   const athlete = await prisma.user.findUnique({ where: { email: result.data.athleteEmail } });
-  if (!athlete || athlete.role !== 'ATHLETE') {
+  if (!athlete || (athlete.role !== 'ATHLETE' && !athlete.dualRole)) {
     res.status(404).json({ message: 'Δεν βρέθηκε athlete με αυτό το email' });
     return;
   }
-  const existing = await prisma.trainerAthlete.findUnique({
+const existing = await prisma.trainerAthlete.findUnique({
     where: { trainerId_athleteId: { trainerId: req.user!.id, athleteId: athlete.id } },
   });
-  if (existing) {
-    res.status(409).json({ message: 'Ο athlete είναι ήδη στη λίστα σου' });
+  if (existing && existing.status !== 'ended') {
+    const msg = existing.status === 'pending'
+      ? 'Έχεις ήδη στείλει πρόσκληση σε αυτόν τον athlete'
+      : 'Ο athlete είναι ήδη στη λίστα σου';
+    res.status(409).json({ message: msg });
     return;
   }
-  await prisma.trainerAthlete.create({ data: { trainerId: req.user!.id, athleteId: athlete.id } });
+  if (existing && existing.status === 'ended') {
+    await prisma.trainerAthlete.update({
+      where: { trainerId_athleteId: { trainerId: req.user!.id, athleteId: athlete.id } },
+      data: { status: 'pending' },
+    });
+  } else {
+    await prisma.trainerAthlete.create({ data: { trainerId: req.user!.id, athleteId: athlete.id, status: 'pending' } });
+  }
   res.status(201).json({ id: athlete.id, email: athlete.email, firstName: athlete.firstName, lastName: athlete.lastName });
+});
+
+// GET /api/users/trainer/pending-invites
+router.get('/trainer/pending-invites', authenticate, requireRole('TRAINER'), async (req: AuthRequest, res: Response) => {
+  const pending = await prisma.trainerAthlete.findMany({
+    where: { trainerId: req.user!.id, status: 'pending' },
+    include: {
+      athlete: {
+        select: { id: true, email: true, firstName: true, lastName: true, avatar: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(pending.map(r => ({ inviteId: r.id, ...r.athlete, sentAt: r.createdAt })));
 });
 
 // DELETE /api/users/trainer/athletes/:athleteId

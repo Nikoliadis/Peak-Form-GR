@@ -225,4 +225,46 @@ router.get('/stats', authenticate, requireRole('ATHLETE'), async (req: AuthReque
   res.json({ totalCompleted, streak });
 });
 
+// GET /api/athlete/invites — pending trainer invites
+router.get('/invites', authenticate, requireRole('ATHLETE'), async (req: AuthRequest, res: Response) => {
+  const invites = await prisma.trainerAthlete.findMany({
+    where: { athleteId: req.user!.id, status: 'pending' },
+    include: {
+      trainer: {
+        select: { id: true, email: true, firstName: true, lastName: true, avatar: true, bio: true },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(invites.map(r => ({ inviteId: r.id, ...r.trainer, sentAt: r.createdAt })));
+});
+
+// POST /api/athlete/invites/:inviteId/accept
+router.post('/invites/:inviteId/accept', authenticate, requireRole('ATHLETE'), async (req: AuthRequest, res: Response) => {
+  const inviteId = req.params.inviteId as string;
+  const invite = await prisma.trainerAthlete.findFirst({
+    where: { id: inviteId, athleteId: req.user!.id, status: 'pending' },
+  });
+  if (!invite) {
+    res.status(404).json({ message: 'Invite not found' });
+    return;
+  }
+  await prisma.trainerAthlete.update({ where: { id: inviteId }, data: { status: 'active' } });
+  res.json({ message: 'Accepted' });
+});
+
+// POST /api/athlete/invites/:inviteId/decline
+router.post('/invites/:inviteId/decline', authenticate, requireRole('ATHLETE'), async (req: AuthRequest, res: Response) => {
+  const inviteId = req.params.inviteId as string;
+  const invite = await prisma.trainerAthlete.findFirst({
+    where: { id: inviteId, athleteId: req.user!.id, status: 'pending' },
+  });
+  if (!invite) {
+    res.status(404).json({ message: 'Invite not found' });
+    return;
+  }
+  await prisma.trainerAthlete.delete({ where: { id: inviteId } });
+  res.json({ message: 'Declined' });
+});
+
 export default router;
